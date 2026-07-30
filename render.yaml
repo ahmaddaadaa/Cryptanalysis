@@ -1,0 +1,12 @@
+# Render Blueprint — Static Site
+# Dashboard: New → Blueprint → connect this repo
+services:
+  - type: web
+    name: cryptanalysis-demo
+    runtime: static
+    buildCommand: ""
+    staticPublishPath: .
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

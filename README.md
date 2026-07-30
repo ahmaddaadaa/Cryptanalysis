@@ -4,9 +4,34 @@ A hands-on walk through a small 16-bit SPN cipher and a classic differential att
 
 ## Live demo
 
-Once GitHub Pages is on:
+| Host | URL |
+|------|-----|
+| **GitHub Pages** | https://ahmaddaadaa.github.io/Cryptanalysis/ *(turn on under Settings → Pages)* |
+| **Render** | After deploy: `https://<your-service-name>.onrender.com` |
 
-**https://ahmaddaadaa.github.io/Cryptanalysis/**
+### Deploy on Render (recommended, free)
+
+1. Go to [https://dashboard.render.com](https://dashboard.render.com) and sign in (GitHub login is fine).
+2. **New → Static Site**
+3. Connect the repo: `ahmaddaadaa/Cryptanalysis`
+4. Settings:
+   - **Name:** `cryptanalysis-demo` (or anything)
+   - **Branch:** `main`
+   - **Build Command:** leave empty
+   - **Publish Directory:** `.`
+5. Click **Create Static Site**
+
+Render gives you a public link like:
+
+`https://cryptanalysis-demo.onrender.com`
+
+Or use **New → Blueprint** and point it at this repo (`render.yaml` is included).
+
+### Deploy on GitHub Pages
+
+1. https://github.com/ahmaddaadaa/Cryptanalysis/settings/pages  
+2. Source: **Deploy from a branch** → `main` → `/ (root)` → Save  
+3. Site: https://ahmaddaadaa.github.io/Cryptanalysis/
 
 ## What you can try
 
