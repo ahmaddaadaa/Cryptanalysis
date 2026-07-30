@@ -1,0 +1,524 @@
+================================================================================
+  DIFFERENTIAL CRYPTANALYSIS DEMO — MAIN CODE + HOW IT WORKS
+  Heys SPN (16-bit, 4-round) educational attack
+  Reference: Howard M. Heys, "A Tutorial on Linear and Differential Cryptanalysis"
+  Source files: js/spn.js , js/diff-attack.js
+  Project: Cryptanalysis (local copy of core functioning code)
+================================================================================
+
+
+--------------------------------------------------------------------------------
+PART A — HIGH-LEVEL DESCRIPTION
+--------------------------------------------------------------------------------
+
+WHAT THIS PROGRAM DOES
+----------------------
+This is an educational demo of *differential cryptanalysis* on a tiny
+Substitution-Permutation Network (SPN) cipher taken from Heys' tutorial paper.
+
+1. Encrypt 16-bit blocks with a secret 4-round SPN (5 random 16-bit subkeys).
+2. Build the S-box Difference Distribution Table (DDT) — counts how often
+   each input XOR difference maps to each output XOR difference.
+3. Run a *chosen-plaintext* differential attack that recovers 8 bits of the
+   final subkey K5, using a known high-probability 3-round characteristic.
+
+The attacker never needs the secret key to run the attack; subkeys are only
+used to produce ciphertexts (oracle encryption). The true partial key is
+shown only so you can verify the attack succeeded.
+
+
+THE TOY CIPHER (SPN)
+--------------------
+  - Block size: 16 bits
+  - Rounds: 4
+  - Per round:  XOR with subkey Kr  →  four 4×4 S-boxes  →  bit permutation
+  - After last S-box layer: XOR with final subkey K5 (no permutation after round 4)
+  - S-box = first row of DES S-box 1
+  - Permutation = Heys paper Table 2 (bit-wire diffusion)
+
+  Encryption sketch:
+      x = P
+      for r = 1..4:
+          x = x XOR Kr
+          x = S-box layer (4 parallel nibble S-boxes)
+          if r < 4: x = bit permutation
+      C = x XOR K5
+
+
+DIFFERENCE DISTRIBUTION TABLE (DDT)
+-----------------------------------
+For a 4-bit S-box S, for every input difference ΔX and output difference ΔY:
+
+    count[ΔX][ΔY] = #{ x in {0..15} : S(x) XOR S(x XOR ΔX) = ΔY }
+
+Each row sums to 16. Probability of that differential is count/16.
+
+The attack relies on high-probability S-box differentials, e.g.:
+    B → 2  with probability 8/16
+    4 → 6  with probability 6/16
+    2 → 5  with probability 6/16
+
+
+THE DIFFERENTIAL CHARACTERISTIC (Section 4 of Heys)
+---------------------------------------------------
+Chosen plaintext difference:
+
+    ΔP = 0x0B00
+
+Active S-boxes along a 3-round path:
+    Round 1: S12   input diff B → output diff 2   (p = 8/16)
+    Round 2: S23   input diff 4 → output diff 6   (p = 6/16)
+    Round 3: S32 and S33  each 2 → 5               (p = 6/16 each)
+
+Expected difference at the *input* of the last-round S-boxes (ΔU4):
+    two active nibbles equal to 0x6 and 0x6 (the rest inactive / zero
+    under the characteristic).
+
+Overall characteristic probability (independent active S-boxes approx.):
+
+    p_D = (8/16) * (6/16) * (6/16) * (6/16) = 27/1024 ≈ 0.0264 (2.64%)
+
+
+WHAT THE ATTACK RECOVERS
+------------------------
+Only 8 bits of K5: the key nibbles that XOR into the *two active* last-round
+S-boxes (nibble positions 1 and 3 of the 16-bit word, if nibble 0 is the
+high nibble).
+
+There are 2^8 = 256 candidates. For each filtered ciphertext pair, each
+candidate is used to partially decrypt those two nibbles (XOR guessed
+key nibble, then inverse S-box). If the resulting input difference matches
+the expected (6, 6), that candidate gets a vote (count++).
+
+After thousands of pairs, the correct partial key almost always has the
+highest count, near the theoretical rate p_D.
+
+
+ATTACK STEPS (algorithm)
+------------------------
+  1. For i = 1 .. N (e.g. N = 5000 pairs):
+       pick random P1; set P2 = P1 XOR 0x0B00
+       C1 = Encrypt(P1), C2 = Encrypt(P2)   // oracle only
+
+  2. Filter (wrong pairs):
+       If the ciphertext difference has nonzero inactive last-round
+       nibble positions (nibble 0 or nibble 2), discard the pair.
+       (Paper Section 4.4 style filtering reduces noise.)
+
+  3. For each surviving pair, for cand = 0 .. 255:
+       Partially decrypt active CT nibbles with cand
+       If recovered ΔU matches (6, 6): counts[cand]++
+
+  4. Rank candidates by count. Top rank ≈ secret 8-bit partial of K5.
+
+
+WHY IT WORKS (intuition)
+------------------------
+XOR differences are preserved by XOR with a key (key cancels out of Δ).
+S-boxes *distort* differences, but not uniformly: some (ΔX → ΔY) are more
+likely (see DDT). A *characteristic* is a chain of likely S-box differentials
+through the rounds. Right pairs follow that path; wrong key guesses make the
+final expected difference look random, so the correct key’s counter stands out.
+
+
+PROJECT FILE ROLES
+------------------
+  js/spn.js          — cipher + inverse S-box + DDT builder   (core crypto)
+  js/diff-attack.js  — characteristic + attack loop           (core attack)
+  js/app.js          — UI wiring, tables, "show code" panels
+  index.html / css   — presentation only
+
+
+--------------------------------------------------------------------------------
+PART B — MAIN FUNCTIONING CODE
+--------------------------------------------------------------------------------
+(Copy of the core modules as used by the demo.)
+
+
+================================================================================
+FILE: js/spn.js
+================================================================================
+
+/**
+ * Heys Tutorial SPN Cipher (16-bit, 4 rounds)
+ * Exactly as described in "A Tutorial on Linear and Differential Cryptanalysis"
+ * by Howard M. Heys
+ */
+
+const SBOX = [
+  0xE, 0x4, 0xD, 0x1, 0x2, 0xF, 0xB, 0x8,
+  0x3, 0xA, 0x6, 0xC, 0x5, 0x9, 0x0, 0x7
+];
+
+const INV_SBOX = (() => {
+  const inv = new Array(16);
+  for (let i = 0; i < 16; i++) inv[SBOX[i]] = i;
+  return inv;
+})();
+
+// Paper Table 2, 0-based (0 = MSB)
+const PERM = [0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15];
+
+function applyPermutation(x) {
+  let y = 0;
+  for (let i = 0; i < 16; i++) {
+    const bit = (x >>> (15 - i)) & 1;
+    y |= bit << (15 - PERM[i]);
+  }
+  return y >>> 0;
+}
+
+function applySboxes(x) {
+  let y = 0;
+  for (let i = 0; i < 4; i++) {
+    const nibble = (x >>> (12 - 4 * i)) & 0xF;
+    y |= SBOX[nibble] << (12 - 4 * i);
+  }
+  return y >>> 0;
+}
+
+function applyInvSboxes(x) {
+  let y = 0;
+  for (let i = 0; i < 4; i++) {
+    const nibble = (x >>> (12 - 4 * i)) & 0xF;
+    y |= INV_SBOX[nibble] << (12 - 4 * i);
+  }
+  return y >>> 0;
+}
+
+function encryptBlock(pt, subkeys) {
+  let x = pt & 0xFFFF;
+  for (let r = 0; r < 4; r++) {
+    x ^= subkeys[r];
+    x = applySboxes(x);
+    if (r < 3) x = applyPermutation(x);
+  }
+  x ^= subkeys[4];
+  return x & 0xFFFF;
+}
+
+function decryptBlock(ct, subkeys) {
+  let x = ct & 0xFFFF;
+  x ^= subkeys[4];
+  x = applyInvSboxes(x);
+
+  const INV_PERM = new Array(16);
+  for (let i = 0; i < 16; i++) INV_PERM[PERM[i]] = i;
+
+  for (let r = 2; r >= 0; r--) {
+    let invP = 0;
+    for (let i = 0; i < 16; i++) {
+      const bit = (x >>> (15 - i)) & 1;
+      invP |= bit << (15 - INV_PERM[i]);
+    }
+    x = invP;
+    x = applyInvSboxes(x);
+    x ^= subkeys[r];
+  }
+  return x & 0xFFFF;
+}
+
+function toHex16(n) {
+  return (n & 0xFFFF).toString(16).toUpperCase().padStart(4, '0');
+}
+
+function toBin16(n) {
+  return (n & 0xFFFF).toString(2).padStart(16, '0').replace(/(.{4})/g, '$1 ').trim();
+}
+
+function toHexNibble(n) {
+  return (n & 0xF).toString(16).toUpperCase();
+}
+
+/**
+ * Difference Distribution Table (DDT) for the 4×4 S-box.
+ * Entry [ΔX][ΔY] = number of inputs x such that S(x) ⊕ S(x ⊕ ΔX) = ΔY.
+ * Matches Table 1 style in Heys (counts out of 16).
+ */
+function buildDifferenceTable() {
+  const table = Array.from({ length: 16 }, () => new Array(16).fill(0));
+  for (let dx = 0; dx < 16; dx++) {
+    for (let x = 0; x < 16; x++) {
+      const dy = SBOX[x] ^ SBOX[x ^ dx];
+      table[dx][dy]++;
+    }
+  }
+  return table;
+}
+
+// Browser export (for the web demo):
+// window.SPN = {
+//   SBOX, INV_SBOX, PERM,
+//   encryptBlock, decryptBlock,
+//   applyPermutation, applySboxes, applyInvSboxes,
+//   buildDifferenceTable,
+//   toHex16, toBin16, toHexNibble
+// };
+
+
+--------------------------------------------------------------------------------
+NOTES ON spn.js (line-by-line intent)
+--------------------------------------------------------------------------------
+
+SBOX
+  Lookup table: input nibble 0..15 → output nibble.
+  Example: S(0)=0xE, S(0xB)=0xC, etc.
+
+INV_SBOX
+  Built once so decryption / partial decryption can invert S.
+
+PERM
+  Bit permutation after rounds 1–3. Index i (MSB=0) goes to position PERM[i].
+  Spreads one nibble’s bits across the four S-boxes of the next round
+  (diffusion), which is why multi-round characteristics involve several
+  active S-boxes.
+
+applySboxes(x)
+  Split 16-bit word into 4 nibbles, substitute each, reassemble.
+
+encryptBlock(pt, subkeys)
+  Full cipher: subkeys is length-5 array [K1..K5].
+  Rounds 0..2: key → S → P; round 3: key → S only; then final XOR K5.
+
+buildDifferenceTable()
+  Exhaustive count for educational DDT display and for understanding
+  why B→2, 4→6, 2→5 are good transitions for the attack path.
+
+
+================================================================================
+FILE: js/diff-attack.js
+================================================================================
+
+/**
+ * Differential Cryptanalysis Attack on the Heys SPN
+ * Implements the exact characteristic from Section 4 of the paper.
+ *
+ * Characteristic:
+ *   ΔP  = 0x0B00
+ *   Active S-boxes: S12 (B→2), S23 (4→6), S32 (2→5), S33 (2→5)
+ *   Expected ΔU4 active nibbles = 0x6 and 0x6
+ *   Probability ≈ 27/1024 ≈ 0.0264
+ *
+ * Target: 8 bits of K5 (nibble 1 and nibble 3 of the final subkey)
+ */
+
+const DIFF = {
+  DELTA_P: 0x0B00,
+  TARGET_NIBBLE1: 0x6,   // expected difference into S42
+  TARGET_NIBBLE3: 0x6,   // expected difference into S44
+  // Theoretical probability
+  P_D: 27 / 1024
+};
+
+/**
+ * Given a candidate 8-bit partial key and a ciphertext pair,
+ * compute the difference of the two active input nibbles to the last round.
+ * cand layout: high 4 bits = candidate for K5 nibble1 (bits 4-7 of the word
+ *              when nibbles are numbered 0=high .. 3=low)
+ *              low  4 bits = candidate for K5 nibble3 (bits 12-15)
+ *
+ * For each ciphertext:
+ *   nibble_after_key = CT_nibble XOR guessed_key_nibble
+ *   U_nibble = INV_SBOX[ nibble_after_key ]
+ * Then return XOR of the two plaintexts' U nibbles (the input difference).
+ */
+function getActiveU4Diff(ct1, ct2, cand) {
+  const k_n1 = (cand >>> 4) & 0xF;
+  const k_n3 = cand & 0xF;
+
+  // Nibble 1 of CT (bits 4-7) and nibble 3 (bits 12-15)
+  // (bit numbering: bit 15 = MSB of 16-bit word)
+  const c1_n1 = (ct1 >>> 8) & 0xF;
+  const c1_n3 = ct1 & 0xF;
+  const c2_n1 = (ct2 >>> 8) & 0xF;
+  const c2_n3 = ct2 & 0xF;
+
+  const u1_n1 = SPN.INV_SBOX[c1_n1 ^ k_n1];
+  const u1_n3 = SPN.INV_SBOX[c1_n3 ^ k_n3];
+  const u2_n1 = SPN.INV_SBOX[c2_n1 ^ k_n1];
+  const u2_n3 = SPN.INV_SBOX[c2_n3 ^ k_n3];
+
+  return {
+    d1: u1_n1 ^ u2_n1,
+    d3: u1_n3 ^ u2_n3
+  };
+}
+
+/**
+ * Run the full differential attack.
+ * @param {number[]} subkeys - the secret 5 subkeys (only used to encrypt;
+ *                             attacker does not know them)
+ * @param {number} numPairs - how many chosen plaintext pairs to generate
+ * @param {function} onProgress - optional callback(percent, message)
+ * @returns {object} results with ranked candidates and stats
+ */
+function runDifferentialAttack(subkeys, numPairs = 5000, onProgress = null) {
+  const counts = new Array(256).fill(0);
+  let filteredPairs = 0;
+
+  for (let i = 0; i < numPairs; i++) {
+    if (onProgress && i % 200 === 0) {
+      onProgress(Math.round((i / numPairs) * 100),
+                 `Generating & encrypting pairs… ${i}/${numPairs}`);
+    }
+
+    // Random plaintext pair with fixed difference
+    const p1 = Math.floor(Math.random() * 0x10000);
+    const p2 = p1 ^ DIFF.DELTA_P;
+
+    const c1 = SPN.encryptBlock(p1, subkeys);
+    const c2 = SPN.encryptBlock(p2, subkeys);
+
+    // Filtering (paper Section 4.4): inactive last-round S-boxes must have Δ = 0
+    // i.e. nibble 0 and nibble 2 of ciphertext difference must be zero
+    const deltaC = c1 ^ c2;
+    if (((deltaC >>> 12) & 0xF) !== 0 || ((deltaC >>> 4) & 0xF) !== 0) {
+      continue; // wrong pair
+    }
+    filteredPairs++;
+
+    // Try every possible 8-bit partial subkey
+    for (let cand = 0; cand < 256; cand++) {
+      const { d1, d3 } = getActiveU4Diff(c1, c2, cand);
+      if (d1 === DIFF.TARGET_NIBBLE1 && d3 === DIFF.TARGET_NIBBLE3) {
+        counts[cand]++;
+      }
+    }
+  }
+
+  // Rank candidates
+  const ranked = counts
+    .map((cnt, cand) => ({ cand, count: cnt, prob: cnt / numPairs }))
+    .sort((a, b) => b.count - a.count);
+
+  // True partial key (for evaluation only – attacker would not know this)
+  const truePartial = ((subkeys[4] >>> 8) & 0xF) << 4 | (subkeys[4] & 0xF);
+
+  return {
+    counts,
+    ranked,
+    truePartial,
+    trueCount: counts[truePartial],
+    filteredPairs,
+    numPairs,
+    theoreticalPD: DIFF.P_D
+  };
+}
+
+/**
+ * Helper: extract the true 8-bit partial from a full K5
+ * high nibble of result = K5 bits 8..11 (middle-high nibble of word)
+ * low  nibble of result = K5 bits 0..3  (lowest nibble of word)
+ */
+function extractTruePartial(k5) {
+  return ((k5 >>> 8) & 0xF) << 4 | (k5 & 0xF);
+}
+
+// Browser export:
+// window.DiffAttack = {
+//   DIFF,
+//   getActiveU4Diff,
+//   runDifferentialAttack,
+//   extractTruePartial
+// };
+
+
+--------------------------------------------------------------------------------
+NOTES ON diff-attack.js (line-by-line intent)
+--------------------------------------------------------------------------------
+
+DIFF.DELTA_P = 0x0B00
+  Only the second nibble of the plaintext is nonzero (value B). That seeds
+  the first active S-box of the characteristic.
+
+getActiveU4Diff
+  Implements one step of *partial decryption* for a key guess:
+  CT → XOR key guess → inverse S → compare differences.
+  Wrong key guesses randomize d1,d3; right guess preserves the expected
+  difference on right pairs.
+
+runDifferentialAttack loop
+  Chosen-plaintext generation + encrypt + filter + 256-way vote.
+  Complexity roughly O(N * 256) after filtering; N≈ few thousand is enough
+  because p_D is only a few percent (need order ~1/p_D right pairs, plus
+  margin for statistical noise).
+
+truePartial
+  Packed the same way as `cand`, so you can compare ranked[0].cand to the
+  secret. In a real attack this value would be unknown; recovering it is
+  the goal.
+
+
+--------------------------------------------------------------------------------
+PART C — MINIMAL STANDALONE USAGE SKETCH (Node / browser console style)
+--------------------------------------------------------------------------------
+
+// Assume SPN and DiffAttack globals loaded from the two files above.
+
+function demo() {
+  // 1) Secret key (attacker does not know this)
+  const subkeys = [
+    Math.floor(Math.random() * 0x10000),
+    Math.floor(Math.random() * 0x10000),
+    Math.floor(Math.random() * 0x10000),
+    Math.floor(Math.random() * 0x10000),
+    Math.floor(Math.random() * 0x10000)
+  ];
+
+  // 2) Optional: encrypt a message block
+  const pt = 0x4869; // "Hi"
+  const ct = SPN.encryptBlock(pt, subkeys);
+  console.log("C =", SPN.toHex16(ct));
+
+  // 3) Optional: print one DDT cell used by the characteristic
+  const ddt = SPN.buildDifferenceTable();
+  console.log("DDT[B][2] =", ddt[0xB][0x2], "/ 16"); // expect 8
+  console.log("DDT[4][6] =", ddt[0x4][0x6], "/ 16"); // expect 6
+  console.log("DDT[2][5] =", ddt[0x2][0x5], "/ 16"); // expect 6
+
+  // 4) Run attack
+  const result = DiffAttack.runDifferentialAttack(subkeys, 5000);
+  console.log("True partial K5 =", result.truePartial.toString(16));
+  console.log("Top candidate   =", result.ranked[0].cand.toString(16),
+              "count", result.ranked[0].count);
+  console.log("Success?", result.ranked[0].cand === result.truePartial);
+}
+
+// In the web UI: open index.html, click "Launch Differential Attack".
+
+
+--------------------------------------------------------------------------------
+PART D — QUICK REFERENCE NUMBERS
+--------------------------------------------------------------------------------
+
+S-box mapping:
+  0→E  1→4  2→D  3→1  4→2  5→F  6→B  7→8
+  8→3  9→A  A→6  B→C  C→5  D→9  E→0  F→7
+
+Characteristic path probabilities:
+  B→2 : 8/16
+  4→6 : 6/16
+  2→5 : 6/16  (used twice in round 3)
+  p_D = 27/1024 ≈ 2.64%
+
+Bit permutation PERM (MSB index 0 → position):
+  [0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15]
+
+
+--------------------------------------------------------------------------------
+PART E — HOW TO RUN THE FULL DEMO
+--------------------------------------------------------------------------------
+
+  cd Cryptanalysis
+  open index.html
+  # or: npx serve .
+
+Then in the browser:
+  - Section 2 shows the full probability/count DDT
+  - "Show code" buttons reveal implementation snippets per section
+  - "New Random Key" + "Launch Differential Attack" runs Part B live
+
+
+================================================================================
+End of MAIN_CODE_EXPLAINED.txt
+================================================================================

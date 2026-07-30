@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Differential Cryptanalysis Demo – Heys SPN</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>
+        Differential Cryptanalysis
+        <span class="badge">Heys Tutorial SPN</span>
+      </h1>
+      <p>
+        A hands-on walk through a small cipher and a real differential attack.
+        Built around the classic tutorial by Howard M. Heys — try it yourself below.
+      </p>
+      <div class="header-tools">
+        <label class="toggle-label">
+          <input type="checkbox" id="toggle-all-code" />
+          Show all code
+        </label>
+        <a class="btn btn-secondary btn-sm" href="#walkthrough">Videos</a>
+      </div>
+    </header>
+
+    <!-- Videos -->
+    <section class="card walkthrough-card" id="walkthrough" style="margin-bottom:1.25rem">
+      <div class="card-header">
+        <h2><span class="num">▶</span> Videos</h2>
+      </div>
+
+      <div class="walkthrough-layout">
+        <nav class="walkthrough-nav" id="video-step-nav" aria-label="Video steps"></nav>
+
+        <div class="walkthrough-main walkthrough-main-solo">
+          <div class="video-stage">
+            <div class="video-toolbar">
+              <div id="video-step-title" class="video-step-title">—</div>
+              <div class="video-toolbar-actions">
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-jump-section">
+                  Jump to this part
+                </button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-toggle-step-code">
+                  Peek at the code
+                </button>
+              </div>
+            </div>
+
+            <div class="video-frame" id="video-frame">
+              <video id="walkthrough-video" controls playsinline preload="metadata"></video>
+              <div id="video-placeholder" class="video-placeholder">
+                <p id="video-placeholder-title" class="video-placeholder-title">No video for this step yet</p>
+              </div>
+            </div>
+
+            <div id="video-step-code" class="code-panel walkthrough-code" hidden>
+              <div class="code-panel-header">
+                <span class="code-file" id="video-code-file">code</span>
+                <span class="code-caption" id="video-code-caption">Related implementation</span>
+              </div>
+              <pre class="code-block"><code id="video-code-body"></code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 1. Cipher overview -->
+    <section class="card" style="margin-bottom:1.25rem" data-section="cipher" id="section-cipher">
+      <div class="card-header">
+        <h2><span class="num">1</span> The Toy Cipher</h2>
+        <div class="card-header-actions">
+          <button type="button" class="btn btn-ghost btn-sm video-jump" data-video-step="cipher">▶ Video</button>
+          <button type="button" class="btn btn-ghost btn-sm code-toggle" data-target="code-cipher">Show code</button>
+        </div>
+      </div>
+      <div class="explanation">
+        <p>
+          This is a tiny 16-bit cipher with 4 rounds — small enough to see every step.
+          In each round we XOR a key, run four S-boxes, then mix the bits (except the last round).
+          At the end we XOR one last key, K<sub>5</sub>. The S-box comes from the first row of DES S-box 1.
+        </p>
+        <p style="margin-top:0.6rem">
+          <strong>S-box:</strong>
+          <code class="mono">0→E 1→4 2→D 3→1 4→2 5→F 6→B 7→8 8→3 9→A A→6 B→C C→5 D→9 E→0 F→7</code>
+        </p>
+      </div>
+      <div id="code-cipher" class="code-panel" hidden>
+        <div class="code-panel-header">
+          <span class="code-file">js/spn.js</span>
+          <span class="code-caption">S-box, permutation, encrypt / decrypt</span>
+        </div>
+        <pre class="code-block"><code></code></pre>
+      </div>
+    </section>
+
+    <!-- 2. Difference distribution table -->
+    <section class="card" style="margin-bottom:1.25rem" data-section="ddt" id="section-ddt">
+      <div class="card-header">
+        <h2><span class="num">2</span> Difference Distribution Table</h2>
+        <div class="card-header-actions">
+          <button type="button" class="btn btn-ghost btn-sm video-jump" data-video-step="ddt">▶ Video</button>
+          <button type="button" class="btn btn-ghost btn-sm code-toggle" data-target="code-ddt">Show code</button>
+        </div>
+      </div>
+      <div class="explanation">
+        <p>
+          Think of this table as a scoreboard for the S-box.
+          For each input difference <code>ΔX</code> and output difference <code>ΔY</code>,
+          we count how often <code>S(x) ⊕ S(x ⊕ ΔX) = ΔY</code> happens (out of 16).
+          Divide by 16 and you get the probability.
+        </p>
+        <p style="margin-top:0.5rem">
+          The green cells are the ones we care about for our attack:
+          <span class="legend-chip active-char">B→2 (8/16)</span>
+          <span class="legend-chip active-char">4→6 (6/16)</span>
+          <span class="legend-chip active-char">2→5 (6/16)</span>
+        </p>
+      </div>
+
+      <div class="ddt-controls">
+        <label class="toggle-label">
+          <input type="radio" name="ddt-mode" value="count" checked />
+          Show counts
+        </label>
+        <label class="toggle-label">
+          <input type="radio" name="ddt-mode" value="prob" />
+          Show probabilities
+        </label>
+      </div>
+
+      <div id="ddt-table" class="table-wrap ddt-wrap"></div>
+
+      <div id="code-ddt" class="code-panel" hidden>
+        <div class="code-panel-header">
+          <span class="code-file">js/spn.js</span>
+          <span class="code-caption">buildDifferenceTable()</span>
+        </div>
+        <pre class="code-block"><code></code></pre>
+      </div>
+    </section>
+
+    <!-- 3. Characteristic -->
+    <section class="card" style="margin-bottom:1.25rem" data-section="characteristic" id="section-characteristic">
+      <div class="card-header">
+        <h2><span class="num">3</span> Differential Characteristic</h2>
+        <div class="card-header-actions">
+          <button type="button" class="btn btn-ghost btn-sm video-jump" data-video-step="characteristic">▶ Video</button>
+          <button type="button" class="btn btn-ghost btn-sm code-toggle" data-target="code-characteristic">Show code</button>
+        </div>
+      </div>
+      <div class="explanation">
+        <p>
+          Here is the path we follow through the cipher. We only need it to work often enough —
+          then we can peel off 8 bits of the last key, K<sub>5</sub>.
+        </p>
+        <div class="char-path">
+          <div class="char-step">
+            <div class="label">ΔP</div>
+            <div>0x0B00</div>
+          </div>
+          <div class="char-step">
+            <div class="label">S<sub>12</sub></div>
+            <div>B → 2 <small>(8/16)</small></div>
+          </div>
+          <div class="char-step">
+            <div class="label">S<sub>23</sub></div>
+            <div>4 → 6 <small>(6/16)</small></div>
+          </div>
+          <div class="char-step">
+            <div class="label">S<sub>32</sub> + S<sub>33</sub></div>
+            <div>2 → 5 <small>(6/16 each)</small></div>
+          </div>
+          <div class="char-step">
+            <div class="label">Expected ΔU<sub>4</sub></div>
+            <div>…6…6…</div>
+          </div>
+        </div>
+        <p>
+          Chance this whole path holds: <code>p<sub>D</sub> = 27/1024 ≈ 2.64%</code>.
+          Not huge — but with a few thousand pairs, it is enough.
+        </p>
+      </div>
+      <div id="code-characteristic" class="code-panel" hidden>
+        <div class="code-panel-header">
+          <span class="code-file">js/diff-attack.js</span>
+          <span class="code-caption">Characteristic constants</span>
+        </div>
+        <pre class="code-block"><code></code></pre>
+      </div>
+    </section>
+
+    <div class="grid grid-2">
+      <!-- 4. Key & Message -->
+      <section class="card" data-section="key" id="section-key">
+        <div class="card-header">
+          <h2><span class="num">4</span> Secret Key &amp; Message</h2>
+          <div class="card-header-actions">
+            <button type="button" class="btn btn-ghost btn-sm video-jump" data-video-step="key">▶ Video</button>
+            <button type="button" class="btn btn-ghost btn-sm code-toggle" data-target="code-key">Show code</button>
+          </div>
+        </div>
+
+        <div style="margin-bottom:1rem">
+          <label>Secret subkeys (K1 … K5)</label>
+          <div id="subkeys-display" class="mono" style="font-size:0.85rem;margin-top:0.3rem"></div>
+        </div>
+
+        <div class="row" style="margin-bottom:1rem">
+          <div>
+            <label>The 8 bits we try to recover (shown so you can check later)</label>
+            <div id="true-partial" class="mono highlight" style="font-size:1.1rem;margin-top:0.2rem">—</div>
+          </div>
+          <div style="flex:0 0 auto">
+            <button id="btn-gen-key" class="btn btn-secondary">New random key</button>
+          </div>
+        </div>
+
+        <div style="margin-bottom:0.75rem">
+          <label for="plaintext">Type a short message</label>
+          <input type="text" id="plaintext" placeholder="Hello" value="Hi" />
+        </div>
+        <button id="btn-encrypt" class="btn">Encrypt</button>
+
+        <div style="margin-top:1rem">
+          <label>Ciphertext</label>
+          <div id="ciphertext" class="msg-box">—</div>
+        </div>
+
+        <div id="code-key" class="code-panel" hidden>
+          <div class="code-panel-header">
+            <span class="code-file">js/app.js + js/spn.js</span>
+            <span class="code-caption">Key generation &amp; encryption</span>
+          </div>
+          <pre class="code-block"><code></code></pre>
+        </div>
+      </section>
+
+      <!-- 5. Attack controls -->
+      <section class="card" data-section="attack" id="section-attack">
+        <div class="card-header">
+          <h2><span class="num">5</span> Differential Attack</h2>
+          <div class="card-header-actions">
+            <button type="button" class="btn btn-ghost btn-sm video-jump" data-video-step="attack">▶ Video</button>
+            <button type="button" class="btn btn-ghost btn-sm code-toggle" data-target="code-attack">Show code</button>
+          </div>
+        </div>
+        <div class="explanation" style="margin-bottom:1rem">
+          We pick plaintext pairs that differ by <code>0x0B00</code>, encrypt them,
+          and score every possible 8-bit guess for part of K<sub>5</sub>.
+          The right guess should rise to the top.
+        </div>
+
+        <div class="row" style="margin-bottom:1rem">
+          <div>
+            <label for="num-pairs">How many pairs to try</label>
+            <input type="number" id="num-pairs" value="5000" min="500" max="50000" step="500" />
+          </div>
+        </div>
+
+        <button id="btn-attack" class="btn btn-success" style="width:100%">
+          Run the attack
+        </button>
+
+        <div class="progress">
+          <div id="progress-bar" class="progress-bar"></div>
+        </div>
+        <div id="status" class="status">Ready when you are.</div>
+
+        <div id="code-attack" class="code-panel" hidden>
+          <div class="code-panel-header">
+            <span class="code-file">js/diff-attack.js</span>
+            <span class="code-caption">runDifferentialAttack()</span>
+          </div>
+          <pre class="code-block"><code></code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- 6. Results -->
+    <section class="card" style="margin-top:1.25rem" data-section="results" id="section-results">
+      <div class="card-header">
+        <h2><span class="num">6</span> Attack Results</h2>
+        <div class="card-header-actions">
+          <button type="button" class="btn btn-ghost btn-sm video-jump" data-video-step="results">▶ Video</button>
+          <button type="button" class="btn btn-ghost btn-sm code-toggle" data-target="code-results">Show code</button>
+        </div>
+      </div>
+      <div id="attack-result">
+        <p class="explanation">Hit “Run the attack” above — the best key guesses will show up here.</p>
+      </div>
+      <div id="code-results" class="code-panel" hidden>
+        <div class="code-panel-header">
+          <span class="code-file">js/app.js</span>
+          <span class="code-caption">renderResults()</span>
+        </div>
+        <pre class="code-block"><code></code></pre>
+      </div>
+    </section>
+
+    <footer class="footer">
+      Inspired by Howard M. Heys’ tutorial on linear and differential cryptanalysis.
+    </footer>
+  </div>
+
+  <script src="js/spn.js"></script>
+  <script src="js/diff-attack.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
