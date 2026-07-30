@@ -6,3 +6,8 @@ Thumbs.db
 node_modules/
 .vercel/
 .netlify/
+
+# Keep original phone recordings local; ship H.264 mp4 only
+videos/*.MOV
+videos/*.mov
+

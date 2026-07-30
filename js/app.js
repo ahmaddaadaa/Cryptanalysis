@@ -13,13 +13,13 @@ const CHAR_TRANSITIONS = [
   { dx: 0x2, dy: 0x5 }  // S32 & S33
 ];
 
-/** Video steps — files live in videos/ */
+/** Video steps — files live in videos/ as 0.mp4 … 6.mp4 (H.264 for the web) */
 const VIDEO_STEPS = [
   {
     id: 'overview',
     title: '0. Overview',
     sectionId: 'walkthrough',
-    src: 'videos/overview.mp4',
+    src: 'videos/0.mp4',
     codeKey: null,
     codeFile: '',
     codeCaption: ''
@@ -28,7 +28,7 @@ const VIDEO_STEPS = [
     id: 'cipher',
     title: '1. The Toy Cipher',
     sectionId: 'section-cipher',
-    src: 'videos/step-1-cipher.mp4',
+    src: 'videos/1.mp4',
     codeKey: 'code-cipher',
     codeFile: 'js/spn.js',
     codeCaption: 'S-box, permutation, encrypt'
@@ -37,7 +37,7 @@ const VIDEO_STEPS = [
     id: 'ddt',
     title: '2. Difference Table',
     sectionId: 'section-ddt',
-    src: 'videos/step-2-ddt.mp4',
+    src: 'videos/2.mp4',
     codeKey: 'code-ddt',
     codeFile: 'js/spn.js',
     codeCaption: 'buildDifferenceTable()'
@@ -46,7 +46,7 @@ const VIDEO_STEPS = [
     id: 'characteristic',
     title: '3. Characteristic',
     sectionId: 'section-characteristic',
-    src: 'videos/step-3-characteristic.mp4',
+    src: 'videos/3.mp4',
     codeKey: 'code-characteristic',
     codeFile: 'js/diff-attack.js',
     codeCaption: 'DIFF constants'
@@ -55,7 +55,7 @@ const VIDEO_STEPS = [
     id: 'key',
     title: '4. Key & Message',
     sectionId: 'section-key',
-    src: 'videos/step-4-key.mp4',
+    src: 'videos/4.mp4',
     codeKey: 'code-key',
     codeFile: 'js/app.js + js/spn.js',
     codeCaption: 'Key gen & encrypt'
@@ -64,7 +64,7 @@ const VIDEO_STEPS = [
     id: 'attack',
     title: '5. The Attack',
     sectionId: 'section-attack',
-    src: 'videos/step-5-attack.mp4',
+    src: 'videos/5.mp4',
     codeKey: 'code-attack',
     codeFile: 'js/diff-attack.js',
     codeCaption: 'runDifferentialAttack()'
@@ -73,7 +73,7 @@ const VIDEO_STEPS = [
     id: 'results',
     title: '6. Results',
     sectionId: 'section-results',
-    src: 'videos/step-6-results.mp4',
+    src: 'videos/6.mp4',
     codeKey: 'code-results',
     codeFile: 'js/app.js',
     codeCaption: 'renderResults()'
