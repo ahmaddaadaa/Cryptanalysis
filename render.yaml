@@ -1,12 +1,9 @@
 # Render Blueprint — Static Site
 # Dashboard: New → Blueprint → connect this repo
+# Do NOT rewrite all routes to index.html — that breaks /videos/*.mp4
 services:
   - type: web
-    name: cryptanalysis-demo
+    name: cryptanalysis
     runtime: static
     buildCommand: ""
     staticPublishPath: .
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
