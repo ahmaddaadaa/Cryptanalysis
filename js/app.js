@@ -528,40 +528,6 @@ function showVideoPlayer(src) {
   frame.classList.add('has-video');
 }
 
-function showRelatedCodeForStep(step, forceShow) {
-  const panel = document.getElementById('video-step-code');
-  const body = document.getElementById('video-code-body');
-  const fileEl = document.getElementById('video-code-file');
-  const capEl = document.getElementById('video-code-caption');
-  const btn = document.getElementById('btn-toggle-step-code');
-  if (!panel || !body) return;
-
-  if (!step.codeKey || !CODE_SNIPPETS[step.codeKey]) {
-    panel.hidden = true;
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = 'Peek at the code';
-      btn.classList.remove('active');
-    }
-    body.textContent = '';
-    return;
-  }
-
-  if (btn) btn.disabled = false;
-  body.textContent = CODE_SNIPPETS[step.codeKey];
-  if (fileEl) fileEl.textContent = step.codeFile || 'source';
-  if (capEl) capEl.textContent = step.codeCaption || 'Related code';
-
-  if (typeof forceShow === 'boolean') {
-    panel.hidden = !forceShow;
-  }
-
-  if (btn) {
-    btn.classList.toggle('active', !panel.hidden);
-    btn.textContent = panel.hidden ? 'Peek at the code' : 'Hide the code';
-  }
-}
-
 function selectVideoStep(id, options = {}) {
   const step = getVideoStep(id);
   currentVideoStepId = step.id;
@@ -569,20 +535,7 @@ function selectVideoStep(id, options = {}) {
   const titleEl = document.getElementById('video-step-title');
   if (titleEl) titleEl.textContent = step.title;
 
-  showRelatedCodeForStep(
-    step,
-    options.keepCodeOpen ? !document.getElementById('video-step-code')?.hidden : false
-  );
-
-  const src = resolveVideoSrc(step.src);
-  if (videoAvailability[step.id] === true) {
-    showVideoPlayer(src);
-  } else if (videoAvailability[step.id] === false) {
-    // Try CDN/local load anyway (probe can false-negative on slow hosts)
-    showVideoPlayer(src);
-  } else {
-    showVideoPlayer(src);
-  }
+  showVideoPlayer(resolveVideoSrc(step.src));
 
   renderVideoNav();
 
@@ -615,7 +568,7 @@ async function probeAllVideos() {
     videoAvailability[step.id] = await probeVideoFile(step);
   }));
   renderVideoNav();
-  selectVideoStep(currentVideoStepId, { keepCodeOpen: true });
+  selectVideoStep(currentVideoStepId);
 }
 
 function setupWalkthrough() {
@@ -629,13 +582,6 @@ function setupWalkthrough() {
     const step = getVideoStep(currentVideoStepId);
     const el = document.getElementById(step.sectionId);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
-
-  document.getElementById('btn-toggle-step-code')?.addEventListener('click', () => {
-    const step = getVideoStep(currentVideoStepId);
-    const panel = document.getElementById('video-step-code');
-    if (!panel || !step.codeKey) return;
-    showRelatedCodeForStep(step, panel.hidden);
   });
 
   document.querySelectorAll('.video-jump').forEach(btn => {
