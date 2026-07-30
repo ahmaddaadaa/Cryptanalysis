@@ -13,7 +13,12 @@ const CHAR_TRANSITIONS = [
   { dx: 0x2, dy: 0x5 }  // S32 & S33
 ];
 
-/** Video steps — files live in videos/ as 0.mp4 … 6.mp4 (H.264 for the web) */
+/**
+ * Video steps — files are videos/0.mp4 … videos/6.mp4
+ * Prefer local path; fall back to jsDelivr (GitHub) if the host rewrites 404s.
+ */
+const VIDEO_CDN = 'https://cdn.jsdelivr.net/gh/ahmaddaadaa/Cryptanalysis@main/';
+
 const VIDEO_STEPS = [
   {
     id: 'overview',
@@ -79,6 +84,15 @@ const VIDEO_STEPS = [
     codeCaption: 'renderResults()'
   }
 ];
+
+function resolveVideoSrc(relativePath) {
+  // Always use CDN on hosted sites so SPA rewrites / missing deploys do not break video
+  const host = (typeof location !== 'undefined' && location.hostname) || '';
+  if (host && host !== 'localhost' && host !== '127.0.0.1') {
+    return VIDEO_CDN + relativePath;
+  }
+  return relativePath;
+}
 
 let currentVideoStepId = 'overview';
 const videoAvailability = {}; // id -> boolean
@@ -560,13 +574,14 @@ function selectVideoStep(id, options = {}) {
     options.keepCodeOpen ? !document.getElementById('video-step-code')?.hidden : false
   );
 
+  const src = resolveVideoSrc(step.src);
   if (videoAvailability[step.id] === true) {
-    showVideoPlayer(step.src);
+    showVideoPlayer(src);
   } else if (videoAvailability[step.id] === false) {
-    showVideoPlayer(null);
+    // Try CDN/local load anyway (probe can false-negative on slow hosts)
+    showVideoPlayer(src);
   } else {
-    // Not probed yet — try loading directly
-    showVideoPlayer(step.src);
+    showVideoPlayer(src);
   }
 
   renderVideoNav();
@@ -590,8 +605,8 @@ function probeVideoFile(step) {
     v.preload = 'metadata';
     v.onloadedmetadata = () => done(true);
     v.onerror = () => done(false);
-    setTimeout(() => done(false), 2000);
-    v.src = step.src;
+    setTimeout(() => done(false), 4000);
+    v.src = resolveVideoSrc(step.src);
   });
 }
 
